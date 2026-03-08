@@ -1,0 +1,6 @@
+outs:
+- md5: ef14a86c269505d31888ba049480d9f8.dir
+  size: 373622460
+  nfiles: 802
+  hash: md5
+  path: pose

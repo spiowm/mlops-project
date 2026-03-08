@@ -6,19 +6,29 @@ dist/
 wheels/
 *.egg-info
 
+# Ultralytics auto-downloaded weights
+/*.pt
+
 
 # Virtual environments
 .venv
 
 
 .env
-data/*
-!data/.gitkeep
+
+# Дані — керуються DVC
+data/raw/pose/
+data/split/
+
 models/*
 !models/.gitkeep
 
 .ipynb_checkpoints
 mlruns/
+runs/
 .trash/
 
 tasks/
+
+.vscode/
+.idea/
