@@ -9,11 +9,13 @@ DVC stage або ручний запуск:
 
 import argparse
 import os
+import time
 from pathlib import Path
 
 import mlflow
 import pandas as pd
 import yaml
+from mlflow.entities import Metric
 from ultralytics import YOLO, settings
 
 from config import PROJECT_ROOT, dagshub_config
@@ -42,22 +44,34 @@ def setup_mlflow(experiment_name: str) -> None:
 
 def log_results(results, run_dir: Path) -> None:
     """Логує метрики та артефакти в MLflow."""
+    client = mlflow.tracking.MlflowClient()
+    run_id = mlflow.active_run().info.run_id
+
     # Фінальні метрики
+    final = {}
     for key, value in results.results_dict.items():
         safe = key.replace("(", "").replace(")", "").replace("/", "_")
-        mlflow.log_metric(safe, value)
+        final[safe] = value
+    mlflow.log_metrics(final)
 
-    # Поепохові метрики
+    # Поепохові метрики — batch замість 1000+ окремих запитів
     csv_path = run_dir / "results.csv"
     if csv_path.exists():
         df = pd.read_csv(csv_path)
         df.columns = df.columns.str.strip()
+
+        metrics_batch = []
+        ts = int(time.time() * 1000)
         for col in df.columns:
             if col == "epoch":
                 continue
             safe = col.replace("(", "").replace(")", "").replace("/", "_")
             for step, val in enumerate(df[col]):
-                mlflow.log_metric(safe, float(val), step=step)
+                metrics_batch.append(Metric(safe, float(val), ts, step))
+
+        # log_batch приймає до 1000 метрик за раз
+        for i in range(0, len(metrics_batch), 1000):
+            client.log_batch(run_id, metrics=metrics_batch[i:i + 1000])
 
     # Артефакти
     artifact_names = [
