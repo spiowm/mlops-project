@@ -1,0 +1,20 @@
+stages:
+  prepare:
+    cmd: cd src && python prepare.py
+    deps:
+      - data/raw/pose
+      - src/prepare.py
+      - src/config.py
+    params:
+      - prepare
+    outs:
+      - data/split
+
+  train:
+    cmd: cd src && python train.py
+    deps:
+      - data/split
+      - src/train.py
+      - src/config.py
+    params:
+      - train

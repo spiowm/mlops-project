@@ -1,0 +1,30 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: cd src && python prepare.py
+    deps:
+    - path: data/raw/pose
+      hash: md5
+      md5: ef14a86c269505d31888ba049480d9f8.dir
+      size: 373622460
+      nfiles: 802
+    - path: src/config.py
+      hash: md5
+      md5: 749d7c432c0ac5df5f8a59a028e1d695
+      size: 1724
+    - path: src/prepare.py
+      hash: md5
+      md5: 313643071a9603f2d17f0e431d467f7d
+      size: 2886
+    params:
+      params.yaml:
+        prepare:
+          val_hives:
+          - 20230711b
+          - 20230609e
+    outs:
+    - path: data/split
+      hash: md5
+      md5: d828d788c3877a6fe76e6a735e2b8a7a.dir
+      size: 373375003
+      nfiles: 801

@@ -1,9 +1,10 @@
 """
 Тренування YOLO Pose на датасеті бджіл з MLflow трекінгом.
 
-Приклади:
-    python src/train.py --epochs 50 --batch 16
-    python src/train.py --epochs 100 --optimizer SGD --lr0 0.005
+DVC stage або ручний запуск:
+    dvc repro                                    # через пайплайн
+    python src/train.py                          # з params.yaml
+    python src/train.py --epochs 100 --lr0 0.005 # з CLI override
 """
 
 import argparse
@@ -12,10 +13,10 @@ from pathlib import Path
 
 import mlflow
 import pandas as pd
+import yaml
 from ultralytics import YOLO, settings
 
 from config import PROJECT_ROOT, dagshub_config
-from data import DEFAULT_VAL_HIVES, prepare_data
 
 EXPERIMENT_NAME = "bee-pose-estimation"
 
@@ -70,25 +71,37 @@ def log_results(results, run_dir: Path) -> None:
         if path.exists():
             mlflow.log_artifact(str(path))
 
+    # Модель
+    best_pt = run_dir / "weights" / "best.pt"
+    if best_pt.exists():
+        mlflow.log_artifact(str(best_pt))
+
+
+def load_train_params() -> dict:
+    """Завантажує параметри тренування з params.yaml."""
+    params_path = PROJECT_ROOT / "params.yaml"
+    with open(params_path) as f:
+        return yaml.safe_load(f)["train"]
+
 
 def parse_args() -> argparse.Namespace:
+    defaults = load_train_params()
     p = argparse.ArgumentParser(
         description="YOLO Pose — bee pose estimation training",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--epochs", type=int, default=50)
-    p.add_argument("--batch", type=int, default=16)
-    p.add_argument("--imgsz", type=int, default=640)
-    p.add_argument("--lr0", type=float, default=0.01, help="Initial learning rate")
-    p.add_argument("--patience", type=int, default=20,
+    p.add_argument("--epochs", type=int, default=defaults["epochs"])
+    p.add_argument("--batch", type=int, default=defaults["batch"])
+    p.add_argument("--imgsz", type=int, default=defaults["imgsz"])
+    p.add_argument("--lr0", type=float, default=defaults["lr0"],
+                   help="Initial learning rate")
+    p.add_argument("--patience", type=int, default=defaults["patience"],
                    help="Early stopping: зупинити якщо немає покращення N епох")
-    p.add_argument("--optimizer", default="auto",
+    p.add_argument("--optimizer", default=defaults["optimizer"],
                    choices=["auto", "SGD", "Adam", "AdamW"],
                    help="auto = YOLO обере оптимальний варіант")
-    p.add_argument("--model", default="yolo11n-pose.pt",
+    p.add_argument("--model", default=defaults["model"],
                    help="Модель (YOLO завантажить автоматично якщо не знайде)")
-    p.add_argument("--force-split", action="store_true",
-                   help="Перестворити train/val split")
     return p.parse_args()
 
 
@@ -98,7 +111,23 @@ def main() -> None:
     settings.update({"mlflow": False, "wandb": False})
     setup_mlflow(EXPERIMENT_NAME)
 
-    dataset_yaml, counts = prepare_data(force=args.force_split)
+    # Split має бути готовий (stage prepare)
+    split_dir = PROJECT_ROOT / "data" / "split"
+    dataset_yaml = split_dir / "dataset.yaml"
+    if not dataset_yaml.exists():
+        raise FileNotFoundError(
+            f"{dataset_yaml} не знайдено — спочатку запусти prepare stage "
+            "(dvc repro або python src/prepare.py)"
+        )
+
+    counts = {
+        s: len(list((split_dir / s / "images").glob("*.jpg")))
+        for s in ("train", "val")
+    }
+
+    # Прочитати val_hives з params.yaml для логування
+    with open(PROJECT_ROOT / "params.yaml") as f:
+        val_hives = yaml.safe_load(f)["prepare"]["val_hives"]
 
     run_name = f"e{args.epochs}-b{args.batch}-lr{args.lr0}-{args.optimizer}"
 
@@ -112,7 +141,7 @@ def main() -> None:
             "optimizer": args.optimizer,
             "model": args.model,
             "dataset": "bee-pose-2kpt",
-            "val_hives": ", ".join(DEFAULT_VAL_HIVES),
+            "val_hives": ", ".join(val_hives),
             "train_images": counts["train"],
             "val_images": counts["val"],
         })
