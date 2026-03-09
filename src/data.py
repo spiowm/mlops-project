@@ -6,7 +6,8 @@ from pathlib import Path
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from config import PROJECT_ROOT
+
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "pose"
 SPLIT_DIR = PROJECT_ROOT / "data" / "split"
 

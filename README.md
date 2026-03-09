@@ -1,6 +1,6 @@
 # Bee Pose Estimation — MLOps Project
 
-Визначення пози бджіл на прилітній дошці вулика за допомогою YOLO Pose з автоматизованим відстеженням експериментів через MLflow та W&B.
+Визначення пози бджіл на прилітній дошці вулика за допомогою YOLO Pose з відстеженням експериментів через MLflow (DagsHub).
 
 ## Задача
 
@@ -13,38 +13,48 @@ Fine-tuning YOLOv11n-pose на датасеті бджіл:
 
 ```
 ├── src/
+│   ├── config.py          # Конфігурація, credentials, DVC setup
 │   ├── train.py           # Тренування з CLI аргументами
 │   ├── data.py            # Train/val split по вуликах
-│   ├── tracking.py        # MLflow + W&B логування
-│   └── setup_colab.py     # Підготовка середовища Colab
+│   └── tracking.py        # MLflow логування (DagsHub)
 ├── notebooks/
 │   └── 01_eda.ipynb       # Розвідувальний аналіз даних
-├── data/raw/pose/         # Сирі дані (не в git)
-├── models/pretrained/     # Pretrained ваги (не в git)
+├── data/raw/pose/         # Сирі дані (DVC)
 ├── runs/                  # Результати YOLO (не в git)
-└── mlruns/                # MLflow tracking store (не в git)
+└── mlruns/                # MLflow local fallback (не в git)
 ```
 
 ## Встановлення
 
 ```bash
-# Клонування та створення середовища
-git clone <repo-url>
-cd mlops_project
-uv sync  # або: pip install ultralytics mlflow wandb pyyaml
+git clone https://github.com/spiowm/mlops-project.git
+cd mlops-project
+uv sync
+```
+
+### Credentials
+
+Створити `.env` (шаблон: `.env.example`):
+```
+DAGSHUB_TOKEN=your_token
+DAGSHUB_USER=your_username
+DAGSHUB_REPO=your_repo_name
+```
+
+### Датасет (DVC)
+
+```bash
+python src/config.py   # налаштовує DVC credentials
+dvc pull               # завантажує датасет (~360 MB)
 ```
 
 ## Запуск тренування
 
 ```bash
-# Локально (тест без GPU)
-python src/train.py --no-wandb --epochs 2 --batch 2 --imgsz 320
-
-# Повне тренування
-python src/train.py --epochs 50 --batch 16 --lr0 0.01
+python src/train.py --epochs 50 --batch 16
 
 # З іншими гіперпараметрами
-python src/train.py --epochs 50 --lr0 0.005 --optimizer SGD --run-name "sgd-0.005"
+python src/train.py --epochs 100 --lr0 0.005 --optimizer SGD
 ```
 
 ### CLI аргументи
@@ -56,32 +66,26 @@ python src/train.py --epochs 50 --lr0 0.005 --optimizer SGD --run-name "sgd-0.00
 | `--imgsz` | 640 | Розмір зображення |
 | `--lr0` | 0.01 | Initial learning rate |
 | `--optimizer` | AdamW | SGD / Adam / AdamW |
-| `--model` | models/pretrained/yolo11n-pose.pt | Pretrained ваги |
-| `--no-wandb` | — | Вимкнути W&B |
+| `--model` | yolo11n-pose.pt | Pretrained модель |
 | `--force-split` | — | Перестворити train/val split |
 
-## Запуск у Google Colab
+## Google Colab
 
-```python
-!git clone <repo-url>
-%cd mlops_project
-!python src/setup_colab.py           # монтує Drive, розпаковує датасет
-!wandb login                          # опціонально
-!python src/train.py --epochs 50 --batch 16 --lr0 0.01
-```
-
-Датасет завантажується автоматично з Google Drive.
-
-## MLflow UI
+1. Додати `DAGSHUB_TOKEN`, `DAGSHUB_USER`, `DAGSHUB_REPO` у Colab Secrets (🔑)
 
 ```bash
-mlflow ui --backend-store-uri mlruns/
-# Відкрити: http://127.0.0.1:5000
+!git clone https://github.com/spiowm/mlops-project.git
+%cd mlops-project
+!pip install uv
+!uv sync
+!uv run python src/config.py
+!uv run dvc pull
+!uv run python src/train.py --epochs 50 --batch 16
 ```
 
 ## Технології
 
 - **YOLO v11** (ultralytics) — pose estimation
-- **MLflow** — experiment tracking (параметри, метрики, артефакти)
-- **W&B** — хмарний трекінг експериментів
+- **MLflow** → **DagsHub** — experiment tracking
+- **DVC** → **DagsHub Storage** — версіонування датасету
 - **Python 3.12**, uv

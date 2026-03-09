@@ -7,8 +7,7 @@ from pathlib import Path
 import mlflow
 import pandas as pd
 
-# DagsHub MLflow — URI та credentials з .env або env vars
-DAGSHUB_URI = "https://dagshub.com/{user}/{repo}.mlflow"
+from config import PROJECT_ROOT, dagshub_config
 
 
 def setup_mlflow(experiment_name: str) -> None:
@@ -17,9 +16,7 @@ def setup_mlflow(experiment_name: str) -> None:
     Якщо задані DAGSHUB_TOKEN + DAGSHUB_USER + DAGSHUB_REPO — використовує DagsHub.
     Інакше — локальний mlruns/.
     """
-    token = os.environ.get("DAGSHUB_TOKEN")
-    user = os.environ.get("DAGSHUB_USER")
-    repo = os.environ.get("DAGSHUB_REPO")
+    token, user, repo = dagshub_config()
 
     if token and user and repo:
         uri = f"https://dagshub.com/{user}/{repo}.mlflow"
@@ -28,15 +25,14 @@ def setup_mlflow(experiment_name: str) -> None:
         mlflow.set_tracking_uri(uri)
         print(f"[mlflow] DagsHub: {uri}")
     else:
-        project_root = Path(__file__).resolve().parent.parent
-        local_uri = str(project_root / "mlruns")
+        local_uri = str(PROJECT_ROOT / "mlruns")
         mlflow.set_tracking_uri(local_uri)
         print(f"[mlflow] Локальний: {local_uri}")
 
     mlflow.set_experiment(experiment_name)
 
 
-def log_yolo_results(results, run_dir: Path, project_root: Path) -> None:
+def log_yolo_results(results, run_dir: Path) -> None:
     """Логує фінальні та поепохові метрики + артефакти в MLflow."""
 
     # Фінальні метрики
@@ -72,7 +68,7 @@ def log_yolo_results(results, run_dir: Path, project_root: Path) -> None:
     best_pt = run_dir / "weights" / "best.pt"
     if best_pt.exists():
         mlflow.log_artifact(str(best_pt), artifact_path="model")
-        dst = project_root / "models" / "best.pt"
+        dst = PROJECT_ROOT / "models" / "best.pt"
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(best_pt, dst)
         print(f"[mlflow] best.pt → {dst}")
