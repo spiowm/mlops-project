@@ -8,7 +8,6 @@
 
 import argparse
 import os
-import platform
 from pathlib import Path
 
 import mlflow
@@ -83,7 +82,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr0", type=float, default=0.01, help="Initial learning rate")
     p.add_argument("--patience", type=int, default=20,
                    help="Early stopping: зупинити якщо немає покращення N епох")
-    p.add_argument("--optimizer", default="AdamW", choices=["SGD", "Adam", "AdamW"])
+    p.add_argument("--optimizer", default="auto",
+                   choices=["auto", "SGD", "Adam", "AdamW"],
+                   help="auto = YOLO обере оптимальний варіант")
     p.add_argument("--model", default="yolo11n-pose.pt",
                    help="Модель (YOLO завантажить автоматично якщо не знайде)")
     p.add_argument("--force-split", action="store_true",
@@ -114,8 +115,10 @@ def main() -> None:
             "val_hives": ", ".join(DEFAULT_VAL_HIVES),
             "train_images": counts["train"],
             "val_images": counts["val"],
-            "platform": platform.node(),
         })
+
+        env = "colab" if os.environ.get("COLAB_RELEASE_TAG") else "local"
+        mlflow.set_tag("environment", env)
 
         print(f"\n{'='*50}")
         print(f"  {run_name}")
