@@ -1,7 +1,7 @@
 """
 Конфігурація проєкту + налаштування середовища.
 
-При імпорті автоматично завантажує credentials (.env або Colab Secrets).
+При імпорті автоматично завантажує credentials з .env.
 Як скрипт — додатково налаштовує DVC remote auth:
     python src/config.py   # потім: dvc pull
 """
@@ -14,19 +14,8 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# --- Завантаження credentials ---
-# 1. .env файл (локально)
+# Завантаження credentials з .env
 load_dotenv(PROJECT_ROOT / ".env")
-
-# 2. Colab Secrets (якщо в Colab)
-try:
-    from google.colab import userdata  # type: ignore[import-not-found]
-    for _key in ("DAGSHUB_TOKEN", "DAGSHUB_USER", "DAGSHUB_REPO"):
-        _val = userdata.get(_key)
-        if _val:
-            os.environ[_key] = _val
-except ImportError:
-    pass
 
 
 def dagshub_config() -> tuple[str | None, str | None, str | None]:
