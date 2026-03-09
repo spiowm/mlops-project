@@ -21,16 +21,21 @@ def extract_hive_id(filename: str) -> str:
     return match.group(1) if match else "unknown"
 
 
-def prepare_data(force: bool = False) -> Path:
+def prepare_data(force: bool = False) -> tuple[Path, dict[str, int]]:
     """
     Розподіляє зображення та мітки по train/val на основі hive ID.
-    Повертає шлях до згенерованого dataset.yaml.
+    Повертає (шлях до dataset.yaml, {"train": N, "val": M}).
     """
     dataset_yaml = SPLIT_DIR / "dataset.yaml"
 
     if dataset_yaml.exists() and not force:
+        # Порахувати існуючі
+        counts = {
+            s: len(list((SPLIT_DIR / s / "images").glob("*.jpg")))
+            for s in ("train", "val")
+        }
         print("[data] Split вже існує (--force-split для перестворення)")
-        return dataset_yaml
+        return dataset_yaml, counts
 
     if SPLIT_DIR.exists():
         shutil.rmtree(SPLIT_DIR)
@@ -66,4 +71,4 @@ def prepare_data(force: bool = False) -> Path:
         yaml.dump(config, f, default_flow_style=False)
 
     print(f"[data] Split: train={counts['train']}, val={counts['val']}")
-    return dataset_yaml
+    return dataset_yaml, counts

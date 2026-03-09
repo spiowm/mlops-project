@@ -1,23 +1,75 @@
 """
-Тренування YOLO Pose на датасеті бджіл з MLflow трекінгом (DagsHub).
+Тренування YOLO Pose на датасеті бджіл з MLflow трекінгом.
 
 Приклади:
     python src/train.py --epochs 50 --batch 16
     python src/train.py --epochs 100 --optimizer SGD --lr0 0.005
-    python src/train.py --epochs 5 --imgsz 320
 """
 
 import argparse
+import os
+import platform
 from pathlib import Path
 
 import mlflow
+import pandas as pd
 from ultralytics import YOLO, settings
 
-from config import PROJECT_ROOT
-from data import prepare_data
-from tracking import setup_mlflow, log_yolo_results
+from config import PROJECT_ROOT, dagshub_config
+from data import DEFAULT_VAL_HIVES, prepare_data
 
 EXPERIMENT_NAME = "bee-pose-estimation"
+
+
+def setup_mlflow(experiment_name: str) -> None:
+    """Налаштовує MLflow: завжди локально, додатково DagsHub якщо є credentials."""
+    # Локальний tracking — завжди
+    local_uri = str(PROJECT_ROOT / "mlruns")
+    mlflow.set_tracking_uri(local_uri)
+    print(f"[mlflow] Локальний: {local_uri}")
+
+    # DagsHub — додатково, якщо задані credentials
+    token, user, repo = dagshub_config()
+    if token and user and repo:
+        uri = f"https://dagshub.com/{user}/{repo}.mlflow"
+        os.environ["MLFLOW_TRACKING_USERNAME"] = user
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = token
+        mlflow.set_tracking_uri(uri)
+        print(f"[mlflow] DagsHub: {uri}")
+
+    mlflow.set_experiment(experiment_name)
+
+
+def log_results(results, run_dir: Path) -> None:
+    """Логує метрики та артефакти в MLflow."""
+    # Фінальні метрики
+    for key, value in results.results_dict.items():
+        safe = key.replace("(", "").replace(")", "").replace("/", "_")
+        mlflow.log_metric(safe, value)
+
+    # Поепохові метрики
+    csv_path = run_dir / "results.csv"
+    if csv_path.exists():
+        df = pd.read_csv(csv_path)
+        df.columns = df.columns.str.strip()
+        for col in df.columns:
+            if col == "epoch":
+                continue
+            safe = col.replace("(", "").replace(")", "").replace("/", "_")
+            for step, val in enumerate(df[col]):
+                mlflow.log_metric(safe, float(val), step=step)
+
+    # Артефакти
+    artifact_names = [
+        "confusion_matrix.png", "confusion_matrix_normalized.png",
+        "results.png", "results.csv",
+        "R_curve.png", "P_curve.png", "PR_curve.png", "F1_curve.png",
+        "val_batch0_pred.jpg", "val_batch1_pred.jpg",
+    ]
+    for name in artifact_names:
+        path = run_dir / name
+        if path.exists():
+            mlflow.log_artifact(str(path))
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +81,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--lr0", type=float, default=0.01, help="Initial learning rate")
+    p.add_argument("--patience", type=int, default=20,
+                   help="Early stopping: зупинити якщо немає покращення N епох")
     p.add_argument("--optimizer", default="AdamW", choices=["SGD", "Adam", "AdamW"])
     p.add_argument("--model", default="yolo11n-pose.pt",
                    help="Модель (YOLO завантажить автоматично якщо не знайде)")
@@ -40,34 +94,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    # Вимикаємо вбудовані callback-и ultralytics (логуємо самі)
     settings.update({"mlflow": False, "wandb": False})
-
-    # MLflow (DagsHub або локальний)
     setup_mlflow(EXPERIMENT_NAME)
 
-    # Підготовка даних (split по вуликах)
-    dataset_yaml = prepare_data(force=args.force_split)
+    dataset_yaml, counts = prepare_data(force=args.force_split)
 
-    run_name = f"yolo-e{args.epochs}-b{args.batch}-lr{args.lr0}-{args.optimizer}"
+    run_name = f"e{args.epochs}-b{args.batch}-lr{args.lr0}-{args.optimizer}"
 
     with mlflow.start_run(run_name=run_name):
-        mlflow.set_tag("model_type", "YOLO-Pose")
-        mlflow.set_tag("optimizer", args.optimizer)
-
         mlflow.log_params({
             "epochs": args.epochs,
             "batch_size": args.batch,
             "imgsz": args.imgsz,
             "lr0": args.lr0,
+            "patience": args.patience,
             "optimizer": args.optimizer,
-            "model": Path(args.model).name,
+            "model": args.model,
+            "dataset": "bee-pose-2kpt",
+            "val_hives": ", ".join(DEFAULT_VAL_HIVES),
+            "train_images": counts["train"],
+            "val_images": counts["val"],
+            "platform": platform.node(),
         })
 
         print(f"\n{'='*50}")
         print(f"  {run_name}")
         print(f"  epochs={args.epochs}  batch={args.batch}  imgsz={args.imgsz}")
-        print(f"  lr0={args.lr0}  optimizer={args.optimizer}")
+        print(f"  lr0={args.lr0}  patience={args.patience}  optimizer={args.optimizer}")
         print(f"{'='*50}\n")
 
         model = YOLO(args.model)
@@ -77,15 +130,16 @@ def main() -> None:
             batch=args.batch,
             imgsz=args.imgsz,
             lr0=args.lr0,
+            patience=args.patience,
             optimizer=args.optimizer,
-            project=str(PROJECT_ROOT / "runs" / "pose"),
+            project=str(PROJECT_ROOT / "runs" / EXPERIMENT_NAME),
             name=run_name,
             exist_ok=True,
             verbose=True,
         )
 
         run_dir = Path(results.save_dir)
-        log_yolo_results(results, run_dir)
+        log_results(results, run_dir)
         print(f"\n[done] {run_name} — результати: {run_dir}")
 
 
