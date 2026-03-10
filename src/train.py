@@ -54,7 +54,7 @@ def log_results(results, run_dir: Path) -> None:
         final[safe] = value
     mlflow.log_metrics(final)
 
-    # Поепохові метрики — batch замість 1000+ окремих запитів
+    # Поепохові метрики
     csv_path = run_dir / "results.csv"
     if csv_path.exists():
         df = pd.read_csv(csv_path)
@@ -73,22 +73,8 @@ def log_results(results, run_dir: Path) -> None:
         for i in range(0, len(metrics_batch), 1000):
             client.log_batch(run_id, metrics=metrics_batch[i:i + 1000])
 
-    # Артефакти
-    artifact_names = [
-        "confusion_matrix.png", "confusion_matrix_normalized.png",
-        "results.png", "results.csv",
-        "R_curve.png", "P_curve.png", "PR_curve.png", "F1_curve.png",
-        "val_batch0_pred.jpg", "val_batch1_pred.jpg",
-    ]
-    for name in artifact_names:
-        path = run_dir / name
-        if path.exists():
-            mlflow.log_artifact(str(path))
-
-    # Модель
-    best_pt = run_dir / "weights" / "best.pt"
-    if best_pt.exists():
-        mlflow.log_artifact(str(best_pt))
+    # Всі артефакти з run_dir (графіки, матриці, ваги)
+    mlflow.log_artifacts(str(run_dir))
 
 
 def load_train_params() -> dict:
@@ -143,6 +129,15 @@ def main() -> None:
     with open(PROJECT_ROOT / "params.yaml") as f:
         val_hives = yaml.safe_load(f)["prepare"]["val_hives"]
 
+    # Хеш датасету з .dvc файлу — зв'язок MLflow run ↔ версія даних
+    dvc_file = PROJECT_ROOT / "data" / "raw" / "pose.dvc"
+    if dvc_file.exists():
+        with open(dvc_file) as f:
+            dvc_meta = yaml.safe_load(f)
+        dataset_hash = dvc_meta["outs"][0]["md5"][:8]  # перші 8 символів
+    else:
+        dataset_hash = "unknown"
+
     run_name = f"e{args.epochs}-b{args.batch}-lr{args.lr0}-{args.optimizer}"
 
     with mlflow.start_run(run_name=run_name):
@@ -155,6 +150,7 @@ def main() -> None:
             "optimizer": args.optimizer,
             "model": args.model,
             "dataset": "bee-pose-2kpt",
+            "dataset_hash": dataset_hash,
             "val_hives": ", ".join(val_hives),
             "train_images": counts["train"],
             "val_images": counts["val"],

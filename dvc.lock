@@ -28,3 +28,29 @@ stages:
       md5: d828d788c3877a6fe76e6a735e2b8a7a.dir
       size: 373375003
       nfiles: 801
+  train:
+    cmd: cd src && python train.py
+    deps:
+    - path: data/split
+      hash: md5
+      md5: e005641360f9a84b0090402bd81cec52.dir
+      size: 373623698
+      nfiles: 803
+    - path: src/config.py
+      hash: md5
+      md5: 749d7c432c0ac5df5f8a59a028e1d695
+      size: 1724
+    - path: src/train.py
+      hash: md5
+      md5: 8572ec296ce36c2bd33a82a0da1644ba
+      size: 6582
+    params:
+      params.yaml:
+        train:
+          model: yolo11n-pose.pt
+          epochs: 1
+          batch: 16
+          imgsz: 320
+          lr0: 0.01
+          patience: 20
+          optimizer: auto
