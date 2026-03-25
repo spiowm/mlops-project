@@ -1,0 +1,45 @@
+seed: 42
+
+mlflow:
+  experiment_name: "HPO_YOLO_Pose"
+
+data:
+  dataset_yaml: "data/split/dataset.yaml"
+
+model:
+  weights: "models/pretrained/yolo11n-pose.pt"
+  imgsz: 320
+  patience: 5
+
+hpo:
+  n_trials: 20
+  sampler: "tpe"          # tpe | random
+  direction: "maximize"
+  metric: "metrics/mAP50-95(P)"
+  trial_epochs: 5         # коротке тренування per trial
+  log_trial_weights: true # зберігати ваги кожного trial у DagsHub
+
+  # Search space
+  lr0:
+    low: 0.001
+    high: 0.1
+  lrf:
+    low: 0.001
+    high: 0.1
+  batch:
+    choices: [8, 16, 32]
+  optimizer:
+    choices: ["SGD", "Adam", "AdamW"]
+  mosaic:
+    low: 0.0
+    high: 1.0
+  degrees:
+    low: 0.0
+    high: 30.0
+  imgsz:
+    choices: [320, 640, 1280, 1920]  # для справжнього пошуку; менші значення на слабкому GPU
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null

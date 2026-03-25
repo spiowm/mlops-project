@@ -1,0 +1,32 @@
+seed: 42
+
+mlflow:
+  experiment_name: "HPO_YOLO_Pose"
+
+data:
+  dataset_yaml: "data/split/dataset.yaml"
+
+model:
+  weights: "models/pretrained/yolo11n-pose.pt"
+  imgsz: 320
+  patience: 1
+
+hpo:
+  n_trials: 3
+  sampler: "tpe"
+  direction: "maximize"
+  metric: "metrics/mAP50-95(P)"
+  trial_epochs: 1         # 1 епоха — лише перевірка що все запускається
+  log_trial_weights: false # не завантажувати ваги при тестовому запуску
+
+  # Мінімальний search space (тільки 2 параметри)
+  lr0:
+    low: 0.005
+    high: 0.05
+  batch:
+    choices: [8, 16]
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null

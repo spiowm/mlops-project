@@ -4,10 +4,15 @@ prepare:
     - "20230609e"
 
 train:
-  model: yolo11n-pose.pt
+  model: models/pretrained/yolo11n-pose.pt
   epochs: 1
   batch: 16
   imgsz: 320
   lr0: 0.01
   patience: 20
   optimizer: auto
+
+hpo:
+  n_trials: 20
+  sampler: tpe
+  trial_epochs: 5

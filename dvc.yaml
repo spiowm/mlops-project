@@ -18,3 +18,15 @@ stages:
       - src/config.py
     params:
       - train
+
+  optimize:
+    cmd: python src/optimize.py
+    deps:
+      - data/split
+      - src/optimize.py
+      - src/config.py
+      - config/config.yaml
+    params:
+      - hpo
+    outs:
+      - models/best_model_hpo.pt

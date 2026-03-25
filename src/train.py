@@ -101,8 +101,9 @@ def parse_args() -> argparse.Namespace:
                    choices=["auto", "SGD", "Adam", "AdamW"],
                    help="auto = YOLO обере оптимальний варіант")
     p.add_argument("--model", default=defaults["model"],
-                   help="Модель (YOLO завантажить автоматично якщо не знайде)")
+                   help="Модель (відносно кореня проєкту або YOLO завантажить автоматично)")
     return p.parse_args()
+
 
 
 def main() -> None:
@@ -165,7 +166,9 @@ def main() -> None:
         print(f"  lr0={args.lr0}  patience={args.patience}  optimizer={args.optimizer}")
         print(f"{'='*50}\n")
 
-        model = YOLO(args.model)
+        model_path = PROJECT_ROOT / args.model
+        model = YOLO(str(model_path) if model_path.exists() else args.model)
+
         results = model.train(
             data=str(dataset_yaml),
             epochs=args.epochs,
