@@ -44,4 +44,4 @@ if __name__ == "__main__":
     setup_dvc_credentials()
     print("\nДалі:")
     print("  dvc pull                        # завантажити датасет")
-    print("  dvc repro train                 # тренування (параметри в params.yaml)")
+    print("  python src/train.py --epochs 50 # тренування")

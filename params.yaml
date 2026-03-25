@@ -1,5 +1,4 @@
 prepare:
-  dataset: pose           # яких датасет готувати (pose | detection | seg)
   val_hives:
     - "20230711b"
     - "20230609e"
@@ -12,9 +11,3 @@ train:
   lr0: 0.01
   patience: 20
   optimizer: auto
-
-evaluate:
-  weights: models/best.pt   # шлях до ваг (відносно кореня проєкту)
-  kp_conf: 0.5
-  iou_thresh: 0.5
-  output_dir: evaluation    # результати: evaluation/<dataset>/

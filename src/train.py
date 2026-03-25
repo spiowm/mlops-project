@@ -1,12 +1,13 @@
 """
 Тренування YOLO Pose на датасеті бджіл з MLflow трекінгом.
 
-Запуск:
-    dvc repro train                  # через DVC пайплайн
-    python src/train.py              # читає параметри з params.yaml
+DVC stage або ручний запуск:
+    dvc repro                                    # через пайплайн
+    python src/train.py                          # з params.yaml
+    python src/train.py --epochs 100 --lr0 0.005 # з CLI override
 """
 
-from math import degrees
+import argparse
 import os
 import time
 from pathlib import Path
@@ -20,7 +21,6 @@ from ultralytics import YOLO, settings
 from config import PROJECT_ROOT, dagshub_config
 
 EXPERIMENT_NAME = "bee-pose-estimation"
-PRETRAINED_DIR = PROJECT_ROOT / "models" / "pretrained"
 
 
 def setup_mlflow(experiment_name: str) -> None:
@@ -77,32 +77,47 @@ def log_results(results, run_dir: Path) -> None:
     mlflow.log_artifacts(str(run_dir))
 
 
+def load_train_params() -> dict:
+    """Завантажує параметри тренування з params.yaml."""
+    params_path = PROJECT_ROOT / "params.yaml"
+    with open(params_path) as f:
+        return yaml.safe_load(f)["train"]
+
+
+def parse_args() -> argparse.Namespace:
+    defaults = load_train_params()
+    p = argparse.ArgumentParser(
+        description="YOLO Pose — bee pose estimation training",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("--epochs", type=int, default=defaults["epochs"])
+    p.add_argument("--batch", type=int, default=defaults["batch"])
+    p.add_argument("--imgsz", type=int, default=defaults["imgsz"])
+    p.add_argument("--lr0", type=float, default=defaults["lr0"],
+                   help="Initial learning rate")
+    p.add_argument("--patience", type=int, default=defaults["patience"],
+                   help="Early stopping: зупинити якщо немає покращення N епох")
+    p.add_argument("--optimizer", default=defaults["optimizer"],
+                   choices=["auto", "SGD", "Adam", "AdamW"],
+                   help="auto = YOLO обере оптимальний варіант")
+    p.add_argument("--model", default=defaults["model"],
+                   help="Модель (YOLO завантажить автоматично якщо не знайде)")
+    return p.parse_args()
+
+
 def main() -> None:
-    with open(PROJECT_ROOT / "params.yaml") as f:
-        all_params = yaml.safe_load(f)
-        
-    train_params = all_params.get("train", {})
-    epochs = train_params.get("epochs", 50)
-    batch = train_params.get("batch", 16)
-    imgsz = train_params.get("imgsz", 1280)
-    lr0 = train_params.get("lr0", 0.01)
-    patience = train_params.get("patience", 20)
-    optimizer = train_params.get("optimizer", "auto")
-    model_name = train_params.get("model", "yolo11n-pose.pt")
-    
-    PRETRAINED_DIR.mkdir(parents=True, exist_ok=True)
-    settings.update({"mlflow": False, "wandb": False, "weights_dir": str(PRETRAINED_DIR)})
+    args = parse_args()
+
+    settings.update({"mlflow": False, "wandb": False})
     setup_mlflow(EXPERIMENT_NAME)
 
     # Split має бути готовий (stage prepare)
-    dataset = all_params.get("prepare", {}).get("dataset", "pose")
-
-    split_dir = PROJECT_ROOT / "data" / "split" / dataset
+    split_dir = PROJECT_ROOT / "data" / "split"
     dataset_yaml = split_dir / "dataset.yaml"
     if not dataset_yaml.exists():
         raise FileNotFoundError(
             f"{dataset_yaml} не знайдено — спочатку запусти prepare stage "
-            "(dvc repro prepare або python src/prepare.py)"
+            "(dvc repro або python src/prepare.py)"
         )
 
     counts = {
@@ -111,10 +126,11 @@ def main() -> None:
     }
 
     # Прочитати val_hives з params.yaml для логування
-    val_hives = all_params["prepare"]["val_hives"]
+    with open(PROJECT_ROOT / "params.yaml") as f:
+        val_hives = yaml.safe_load(f)["prepare"]["val_hives"]
 
     # Хеш датасету з .dvc файлу — зв'язок MLflow run ↔ версія даних
-    dvc_file = PROJECT_ROOT / "data" / "raw" / f"{dataset}.dvc"
+    dvc_file = PROJECT_ROOT / "data" / "raw" / "pose.dvc"
     if dvc_file.exists():
         with open(dvc_file) as f:
             dvc_meta = yaml.safe_load(f)
@@ -122,23 +138,22 @@ def main() -> None:
     else:
         dataset_hash = "unknown"
 
-    run_name = f"e{epochs}-b{batch}-lr{lr0}-{optimizer}"
+    run_name = f"e{args.epochs}-b{args.batch}-lr{args.lr0}-{args.optimizer}"
 
     with mlflow.start_run(run_name=run_name):
         mlflow.log_params({
-            "epochs": epochs,
-            "batch_size": batch,
-            "imgsz": imgsz,
-            "lr0": lr0,
-            "patience": patience,
-            "optimizer": optimizer,
-            "model": model_name,
-            "dataset": dataset,
+            "epochs": args.epochs,
+            "batch_size": args.batch,
+            "imgsz": args.imgsz,
+            "lr0": args.lr0,
+            "patience": args.patience,
+            "optimizer": args.optimizer,
+            "model": args.model,
+            "dataset": "bee-pose-2kpt",
             "dataset_hash": dataset_hash,
             "val_hives": ", ".join(val_hives),
             "train_images": counts["train"],
             "val_images": counts["val"],
-            # degrees: 180.0
         })
 
         env = "colab" if os.environ.get("COLAB_RELEASE_TAG") else "local"
@@ -146,29 +161,19 @@ def main() -> None:
 
         print(f"\n{'='*50}")
         print(f"  {run_name}")
-        print(f"  epochs={epochs}  batch={batch}  imgsz={imgsz}")
-        print(f"  lr0={lr0}  patience={patience}  optimizer={optimizer}")
+        print(f"  epochs={args.epochs}  batch={args.batch}  imgsz={args.imgsz}")
+        print(f"  lr0={args.lr0}  patience={args.patience}  optimizer={args.optimizer}")
         print(f"{'='*50}\n")
-        # Якщо задано просто ім'я файлу (не шлях) — шукаємо / завантажуємо в models/pretrained/
-        model_path = Path(model_name)
-        if not model_path.is_absolute() and not model_path.parent.parts:
-            # Просто ім'я файлу (напр. yolo11n-pose.pt)
-            PRETRAINED_DIR.mkdir(parents=True, exist_ok=True)
-            pretrained_path = PRETRAINED_DIR / model_name
-            # Передаємо повний шлях — YOLO завантажить в pretrained/ якщо файл не існує
-            model_path = pretrained_path
-        else:
-            model_path = PROJECT_ROOT / model_path if not model_path.is_absolute() else model_path
 
-        model = YOLO(str(model_path))
+        model = YOLO(args.model)
         results = model.train(
             data=str(dataset_yaml),
-            epochs=epochs,
-            batch=batch,
-            imgsz=imgsz,
-            lr0=lr0,
-            patience=patience,
-            optimizer=optimizer,
+            epochs=args.epochs,
+            batch=args.batch,
+            imgsz=args.imgsz,
+            lr0=args.lr0,
+            patience=args.patience,
+            optimizer=args.optimizer,
             project=str(PROJECT_ROOT / "runs" / EXPERIMENT_NAME),
             name=run_name,
             exist_ok=True,
