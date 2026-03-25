@@ -1,20 +1,32 @@
 stages:
   prepare:
-    cmd: cd src && python prepare.py
+    cmd: python src/prepare.py
     deps:
-      - data/raw/pose
+      - data/raw/${prepare.dataset}
       - src/prepare.py
       - src/config.py
     params:
       - prepare
     outs:
-      - data/split
+      - data/split/${prepare.dataset}
 
   train:
-    cmd: cd src && python train.py
+    cmd: python src/train.py
     deps:
-      - data/split
+      - data/split/${prepare.dataset}
       - src/train.py
       - src/config.py
     params:
       - train
+
+  evaluate:
+    cmd: python src/evaluate/evaluate_orientation.py
+    deps:
+      - data/split/${prepare.dataset}
+      - src/evaluate/evaluate_orientation.py
+    params:
+      - evaluate
+      - prepare.dataset
+    outs:
+      - ${evaluate.output_dir}/${prepare.dataset}:
+          cache: false
