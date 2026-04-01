@@ -36,3 +36,12 @@ tasks/
 # Hydra
 outputs/
 optimize.log
+
+# CI-generated (root level)
+/metrics.json
+/report.md
+/confusion_matrix.png
+/confusion_matrix_normalized.png
+
+.pytest_cache/
+.ruff_cache/

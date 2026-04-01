@@ -8,7 +8,8 @@ stages:
     params:
       - prepare
     outs:
-      - data/split
+      - data/split:
+          cache: false    # регенерується швидко, не потребує cache/remote
 
   train:
     cmd: cd src && python train.py
@@ -29,4 +30,7 @@ stages:
     params:
       - hpo
     outs:
-      - models/best_model_hpo.pt
+      - models/best_model_hpo.pt:
+          cache: false    # зберігається в MLflow/DagsHub, не в DVC remote
+          persist: true   # не видаляти при dvc repro якщо вже існує
+

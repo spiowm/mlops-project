@@ -1,0 +1,142 @@
+name: Model CI (Train, Test, Report)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check src/ scripts/ tests/
+
+  pre-train-tests:
+    name: 🧪 Pre-train Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Setup DVC credentials
+        env:
+          DAGSHUB_USER: ${{ secrets.DAGSHUB_USER }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          uv run dvc remote modify origin --local auth basic
+          uv run dvc remote modify origin --local user "$DAGSHUB_USER"
+          uv run dvc remote modify origin --local password "$DAGSHUB_TOKEN"
+
+      - name: Pull data (DVC)
+        run: uv run dvc pull
+
+      - name: Prepare data split
+        run: |
+          cd src && uv run python prepare.py
+
+      - name: Run pre-train tests
+        run: uv run pytest tests/test_data.py tests/test_config.py -v
+
+  train-and-test:
+    name: 🚂 CI Train & Quality Gate
+    runs-on: ubuntu-latest
+    needs: [lint, pre-train-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Setup DVC credentials
+        env:
+          DAGSHUB_USER: ${{ secrets.DAGSHUB_USER }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          uv run dvc remote modify origin --local auth basic
+          uv run dvc remote modify origin --local user "$DAGSHUB_USER"
+          uv run dvc remote modify origin --local password "$DAGSHUB_TOKEN"
+
+      - name: Pull data (DVC)
+        run: uv run dvc pull
+
+      - name: Prepare data split
+        run: |
+          cd src && uv run python prepare.py
+
+      - name: CI Train (lightweight)
+        env:
+          CI_EPOCHS: "1"
+          CI_IMGSZ: "160"
+          CI_BATCH: "4"
+        run: uv run python scripts/ci_train.py
+
+      - name: Run post-train tests (Quality Gate)
+        env:
+          MAP50_THRESHOLD: "0.0"
+          MAP50_95_THRESHOLD: "0.0"
+        run: uv run pytest tests/test_artifacts.py -v
+
+      - name: Install CML
+        if: github.event_name == 'pull_request'
+        run: npm install -g @dvcorg/cml
+
+      - name: Generate CML Report
+        if: github.event_name == 'pull_request'
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run python scripts/generate_report.py > report.md
+          cml comment create report.md
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-metrics
+          path: |
+            metrics.json
+            confusion_matrix.png
+            confusion_matrix_normalized.png
+          if-no-files-found: warn
+
+      - name: Upload model artifact (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-model
+          path: runs/ci/ci_train/weights/best.pt
+          if-no-files-found: warn

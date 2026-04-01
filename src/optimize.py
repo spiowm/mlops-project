@@ -24,12 +24,11 @@ import shutil
 import time
 from pathlib import Path
 
+import hydra
 import mlflow
 import optuna
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
-
-import hydra
 
 from config import PROJECT_ROOT, dagshub_config
 
@@ -206,9 +205,21 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
                     except Exception:
                         pass
 
+                run_dir = Path(results.save_dir)
+
+                # Зберегти всі артефакти trial (графіки, матриці, CSV)
+                if hpo.get("log_artifacts", False):
+                    for artifact_file in run_dir.glob("*"):
+                        if artifact_file.is_file() and artifact_file.suffix in (
+                            ".png", ".jpg", ".csv", ".json", ".yaml",
+                        ):
+                            mlflow.log_artifact(
+                                str(artifact_file), artifact_path="artifacts"
+                            )
+                    print(f"[trial {trial.number:02d}] artifacts → DagsHub ✓")
+
                 # Зберегти ваги trial у DagsHub (якщо log_trial_weights=true)
                 if hpo.get("log_trial_weights", False):
-                    run_dir = Path(results.save_dir)
                     best_pt = run_dir / "weights" / "best.pt"
                     if best_pt.exists():
                         mlflow.log_artifact(str(best_pt), artifact_path="weights")
@@ -279,6 +290,22 @@ def retrain_best(cfg: DictConfig, best_params: dict, dataset_yaml: str,
         print(f"[retrain] Збережено: {out_path}")
     else:
         print(f"[retrain] Увага: best.pt не знайдено в {run_dir}")
+
+    # Логуємо всі артефакти retrain у MLflow (parent run)
+    if mlflow.active_run():
+        # Артефакти (графіки, confusion matrix, results.csv, etc.)
+        for artifact_file in run_dir.glob("*"):
+            if artifact_file.is_file() and artifact_file.suffix in (
+                ".png", ".jpg", ".csv", ".json", ".yaml",
+            ):
+                mlflow.log_artifact(
+                    str(artifact_file), artifact_path="retrain_artifacts"
+                )
+        # Ваги (best + last)
+        weights_dir = run_dir / "weights"
+        if weights_dir.exists():
+            mlflow.log_artifacts(str(weights_dir), artifact_path="retrain_weights")
+        print("[retrain] Артефакти → MLflow ✓")
 
     return out_path
 

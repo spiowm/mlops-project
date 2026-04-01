@@ -15,6 +15,9 @@ Fine-tuning YOLOv11n-pose на датасеті бджіл:
 
 ```
 mlops_project/
+├── .github/workflows/
+│   └── ci.yaml              # GitHub Actions CI/CD
+│
 ├── config/
 │   ├── config.yaml          # Hydra конфіг HPO (повний пошук)
 │   └── config_test.yaml     # Hydra конфіг HPO (мінімальний тест)
@@ -25,18 +28,32 @@ mlops_project/
 │   ├── train.py             # Одиночне тренування YOLO + MLflow
 │   └── optimize.py          # HPO: Optuna + Hydra + MLflow nested runs
 │
+├── scripts/
+│   ├── ci_train.py          # CI тренування (1 epoch, CPU)
+│   ├── compare_metrics.py   # Порівняння з baseline
+│   └── generate_report.py   # CML звіт для PR
+│
+├── tests/
+│   ├── conftest.py          # Shared fixtures
+│   ├── test_data.py         # Pre-train: валідація даних
+│   ├── test_config.py       # Pre-train: валідація конфігурації
+│   └── test_artifacts.py    # Post-train: Quality Gate
+│
 ├── models/
-│   ├── pretrained/          # Базові ваги YOLO (не в git — великі файли)
-│   │   └── yolo11n-pose.pt
+│   ├── pretrained/          # Базові ваги YOLO (не в git)
 │   ├── best.pt              # Найкраща модель з train.py
 │   └── best_model_hpo.pt    # Найкраща модель після HPO
 │
 ├── data/
-│   ├── raw/pose/            # Сирий датасет (керується DVC)
-│   └── split/               # Train/val split (генерується prepare.py)
+│   ├── raw/pose/            # Сирий датасет (DVC)
+│   └── split/               # Train/val split (prepare.py)
+│
+├── baseline/
+│   └── metrics.json         # Еталонні метрики для порівняння в PR
 │
 ├── docs/
-│   └── lab3_hpo_theory.md   # Теорія HPO та схема (укр.)
+│   ├── lab3_hpo_theory.md   # Теорія HPO (укр.)
+│   └── lab4_cicd_theory.md  # Теорія CI/CD (укр.)
 │
 ├── notebooks/
 │   └── 01_eda.ipynb         # Розвідувальний аналіз даних
@@ -45,7 +62,7 @@ mlops_project/
 ├── mlruns/                  # MLflow local fallback (не в git)
 ├── params.yaml              # Параметри пайплайну (DVC-tracked)
 ├── dvc.yaml                 # DVC стадії пайплайну
-└── pyproject.toml           # Python залежності (uv)
+└── pyproject.toml           # Python залежності (uv) + pytest/ruff конфіг
 ```
 
 ---
@@ -205,6 +222,49 @@ https://dagshub.com/<DAGSHUB_USER>/<DAGSHUB_REPO>/mlflow
 
 ---
 
+## CI/CD (GitHub Actions)
+
+Детальна теорія → [`docs/lab4_cicd_theory.md`](docs/lab4_cicd_theory.md)
+
+При кожному `push` та `pull_request` автоматично запускається CI-пайплайн:
+
+```
+┌─────────┐   ┌──────────────────┐   ┌─────────────────────┐
+│  Lint   │   │ Pre-train Tests  │   │  Train & Test        │
+│ (ruff)  │──→│ (data + config)  │──→│  1 epoch CPU         │
+│         │   │                  │   │  Quality Gate (mAP50) │
+│         │   │                  │   │  CML Report (PR)      │
+└─────────┘   └──────────────────┘   └─────────────────────┘
+```
+
+### Тести
+
+```bash
+# Pre-train (валідація даних та конфігурації)
+uv run pytest tests/test_data.py tests/test_config.py -v
+
+# Post-train (Quality Gate — після тренування)
+uv run pytest tests/test_artifacts.py -v
+
+# Лінтинг
+uv run ruff check src/ scripts/ tests/
+```
+
+### CI Training (lightweight)
+
+```bash
+uv run python scripts/ci_train.py   # 1 epoch, CPU, imgsz=160
+```
+
+### Secrets (GitHub → Settings → Secrets)
+
+| Secret | Призначення |
+|--------|------------|
+| `DAGSHUB_USER` | DVC remote auth |
+| `DAGSHUB_TOKEN` | DVC remote auth |
+
+---
+
 ## Технології
 
 | | Інструмент | Роль |
@@ -215,3 +275,5 @@ https://dagshub.com/<DAGSHUB_USER>/<DAGSHUB_REPO>/mlflow
 | ⚙️ | Hydra | Управління конфігами |
 | 📦 | DVC + DagsHub | Версіонування датасету |
 | 🐍 | Python 3.12, uv | Середовище та залежності |
+| 🔄 | GitHub Actions + CML | CI/CD, автоматичні звіти в PR |
+| 🧪 | pytest + ruff | Тестування та лінтинг |

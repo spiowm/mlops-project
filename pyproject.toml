@@ -21,3 +21,25 @@ dependencies = [
     "tqdm>=4.67.3",
     "ultralytics>=8.4.19",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "pretrain: pre-train tests (data, config validation)",
+    "posttrain: post-train tests (artifacts, quality gate)",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

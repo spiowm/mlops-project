@@ -16,8 +16,9 @@ hpo:
   sampler: "tpe"          # tpe | random
   direction: "maximize"
   metric: "metrics/mAP50-95(P)"
-  trial_epochs: 5         # коротке тренування per trial
-  log_trial_weights: true # зберігати ваги кожного trial у DagsHub
+  trial_epochs: 5           # коротке тренування per trial
+  log_trial_weights: true   # зберігати ваги кожного trial у DagsHub
+  log_artifacts: true       # зберігати всі артефакти (графіки, матриці, results.csv)
 
   # Search space
   lr0:
@@ -27,7 +28,7 @@ hpo:
     low: 0.001
     high: 0.1
   batch:
-    choices: [8, 16, 32]
+    choices: [4, 8, 16]
   optimizer:
     choices: ["SGD", "Adam", "AdamW"]
   mosaic:
@@ -37,7 +38,7 @@ hpo:
     low: 0.0
     high: 30.0
   imgsz:
-    choices: [320, 640, 1280, 1920]  # для справжнього пошуку; менші значення на слабкому GPU
+    choices: [320, 480, 640, 960]  # T4-safe; 960 max для Colab (15 GB VRAM)
 
 hydra:
   run:
