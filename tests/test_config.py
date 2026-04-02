@@ -14,15 +14,11 @@ def test_params_yaml_exists(params_path):
 
 
 def test_params_yaml_sections(params_path):
-    """params.yaml має містити секції prepare та train."""
-    if not params_path.exists():
-        return
-
+    """params.yaml має містити секції train та prepare."""
     with open(params_path) as f:
-        params = yaml.safe_load(f)
-
-    for section in ("prepare", "train"):
-        assert section in params, f"params.yaml: відсутня секція '{section}'"
+        data = yaml.safe_load(f)
+    assert "train" in data, "Секція 'train' не знайдена в params.yaml"
+    assert "prepare" in data, "Секція 'prepare' не знайдена в params.yaml"
 
 
 def test_train_params_valid(params_path):
