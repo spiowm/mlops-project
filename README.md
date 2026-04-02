@@ -307,25 +307,57 @@ uv run ruff check src/ scripts/ tests/ dags/
 
 ## Docker (ЛР5)
 
-```bash
-# Збудувати
-docker build --target runtime -t yolo-pose:local .
+> **Podman / SELinux (Fedora, RHEL, Arch)**: Якщо замість Docker встановлено Podman,
+> додавай `:z` в кінці кожного `-v` шляху — це дозволяє контейнеру читати змонтовані папки.
 
-# Запустити CI training
+### Збудувати образ
+
+```bash
+docker build --target runtime -t yolo-pose:local .
+```
+
+### Запустити CI training
+
+```bash
+# Docker (звичайний Linux / macOS / Windows)
 docker run --rm \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/runs:/app/runs \
   yolo-pose:local \
   python scripts/ci_train.py
 
-# Запустити CT pipeline
+# Podman / SELinux (Fedora, Arch, RHEL) — додаємо :z
+docker run --rm \
+  -v $(pwd)/data:/app/data:z \
+  -v $(pwd)/runs:/app/runs:z \
+  yolo-pose:local \
+  python scripts/ci_train.py
+```
+
+### Запустити Continuous Training Pipeline
+
+```bash
+# Docker
 docker run --rm \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/baseline:/app/baseline \
+  -v $(pwd)/runs:/app/runs \
+  -e CT_EPOCHS=1 -e CT_MAP50_THRESHOLD=0.0 \
+  yolo-pose:local \
+  python dags/yolo_training_pipeline.py
+
+# Podman / SELinux
+docker run --rm \
+  -v $(pwd)/data:/app/data:z \
+  -v $(pwd)/baseline:/app/baseline:z \
+  -v $(pwd)/runs:/app/runs:z \
   -e CT_EPOCHS=1 -e CT_MAP50_THRESHOLD=0.0 \
   yolo-pose:local \
   python dags/yolo_training_pipeline.py
 ```
+
+> **Примітка**: Pipeline автоматично виявляє, якщо `dataset.yaml` містить шляхи від
+> іншої машини (хоста), і перегенеровує його через `prepare.py` з правильними шляхами.
 
 ---
 

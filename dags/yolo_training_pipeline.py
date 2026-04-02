@@ -49,7 +49,8 @@ CI_IMGSZ = int(os.getenv("CT_IMGSZ", "320"))
 def check_data_freshness() -> dict:
     """
     Перевіряє наявність та свіжість даних.
-    У реальному проєкті — DVC pull або перевірка timestamp.
+    Додатково перевіряє, чи шляхи в dataset.yaml актуальні
+    для поточного середовища (хост vs Docker).
     """
     logger = get_run_logger()
 
@@ -74,6 +75,24 @@ def check_data_freshness() -> dict:
         logger.warning(f"data/split/ не знайдено: {split_dir}")
         result["train_images"] = 0
         result["val_images"] = 0
+
+    # Перевіряємо чи paths у dataset.yaml актуальні для цього середовища
+    # (критично для Docker: yaml може містити absolute paths від хост-машини)
+    if dataset_yaml.exists() and not result["needs_prepare"]:
+        try:
+            import yaml as _yaml
+            with open(dataset_yaml) as f:
+                ds = _yaml.safe_load(f)
+            yaml_root = ds.get("path", "")
+            if yaml_root and not Path(yaml_root).exists():
+                logger.warning(
+                    f"dataset.yaml містить недоступний шлях: '{yaml_root}'. "
+                    "Це absolute path від іншої машини (наприклад хоста). "
+                    "Запустимо prepare.py щоб перегенерувати з правильними шляхами."
+                )
+                result["needs_prepare"] = True
+        except Exception as e:
+            logger.warning(f"Не вдалось перевірити dataset.yaml paths: {e}")
 
     return result
 
@@ -410,15 +429,26 @@ def yolo_pose_training_pipeline(
 
 
 if __name__ == "__main__":
-    # Запуск:
-    #   python dags/yolo_training_pipeline.py
-    #
-    # Або з параметрами:
-    #   CT_EPOCHS=2 CT_IMGSZ=320 python dags/yolo_training_pipeline.py
+    import sys
 
-    result = yolo_pose_training_pipeline(
-        ct_epochs=int(os.getenv("CT_EPOCHS", "1")),
-        ct_imgsz=int(os.getenv("CT_IMGSZ", "320")),
-        map50_threshold=float(os.getenv("CT_MAP50_THRESHOLD", "0.0")),
-    )
-    print(f"\nРезультат: {result}")
+    # Завантажуємо дефолтні параметри з ENV
+    default_params = {
+        "ct_epochs": int(os.getenv("CT_EPOCHS", "1")),
+        "ct_imgsz": int(os.getenv("CT_IMGSZ", "320")),
+        "map50_threshold": float(os.getenv("CT_MAP50_THRESHOLD", "0.0")),
+    }
+
+    if "--serve" in sys.argv:
+        # ЗАПУСК ЧЕРЕЗ UI (Джей Деплоймент)
+        # Команда: uv run python dags/yolo_training_pipeline.py --serve
+        print("🚀 Запуск у режимі Deployment. Перейди на http://localhost:4200 (Deployments -> Quick Run)")
+        yolo_pose_training_pipeline.serve(
+            name="ct-pipeline-ui-deployment",
+            tags=["yolo", "ct"],
+            parameters=default_params
+        )
+    else:
+        # ПРЯМИЙ ЗАПУСК (CI/CD, Docker, локальні тести)
+        # Команда: uv run python dags/yolo_training_pipeline.py
+        result = yolo_pose_training_pipeline(**default_params)
+        print(f"\nРезультат: {result}")

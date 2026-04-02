@@ -47,6 +47,7 @@ COPY tests/ ./tests/
 COPY dags/ ./dags/
 COPY config/ ./config/
 COPY params.yaml ./
+COPY dvc.yaml ./
 COPY pyproject.toml ./
 COPY baseline/ ./baseline/
 
