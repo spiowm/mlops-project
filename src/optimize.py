@@ -208,9 +208,14 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
         chosen_imgsz = int(params.get("imgsz", cfg.model.imgsz))
 
         if "batch" in hpo:
-            # Умовний вибір batch: обмежуємо варіанти для великих imgsz
+            # Optuna вимагає, щоб choices були статичними для всього Study.
+            # Тому ми дозволяємо вибрати будь-який батч, але миттєво обрізаємо trial
+            # (Pruning), якщо комбінація imgsz + batch призведе до Out of Memory.
+            params["batch"] = trial.suggest_categorical("batch", list(hpo.batch.choices))
             safe_batches = _get_safe_batches(chosen_imgsz, list(hpo.batch.choices))
-            params["batch"] = trial.suggest_categorical("batch", safe_batches)
+            if params["batch"] not in safe_batches:
+                print(f"\n[trial {trial.number:02d}] Комбінація imgsz={chosen_imgsz} та batch={params['batch']} недійсна → PRUNED")
+                raise optuna.TrialPruned()
         else:
             params["batch"] = _get_safe_batches(chosen_imgsz, [16])[0]
 
