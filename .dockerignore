@@ -1,0 +1,42 @@
+# Секрети — ніколи не в образ
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+
+# Python кеш
+__pycache__/
+*.py[oc]
+.venv/
+*.egg-info/
+
+# Дані (монтуються через volume при docker run)
+data/
+mlruns/
+runs/
+
+# Моделі (важкі, монтуються окремо)
+models/
+
+# CI/CD артефакти
+report.md
+metrics.json
+confusion_matrix*.png
+
+# Документація та ноутбуки (не потрібні в образі)
+notebooks/
+docs/
+tasks/
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+
+# Тестовий / Hydra кеш
+outputs/
+.pytest_cache/
+.ruff_cache/

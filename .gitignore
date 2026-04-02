@@ -28,7 +28,9 @@ mlruns/
 runs/
 .trash/
 
-tasks/
+# Завдання лабораторних (умови задач) — не потрібні в git
+tasks/[0-9]*.md
+# tasks/docs/ — теорія та відповіді — ЗБЕРІГАЄМО в git
 
 .vscode/
 .idea/

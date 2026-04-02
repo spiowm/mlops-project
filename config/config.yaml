@@ -1,44 +1,65 @@
 seed: 42
 
 mlflow:
-  experiment_name: "HPO_YOLO_Pose"
+  experiment_name: "HPO_YOLO_Pose_HiRes"
 
 data:
   dataset_yaml: "data/split/dataset.yaml"
 
 model:
-  weights: "models/pretrained/yolo11n-pose.pt"
-  imgsz: 320
-  patience: 5
+  # ЗМІНА: small замість nano — Run 2 vs Run 1, Run 4 vs Run 3:
+  # small стабільно дає +2-4% mAP на тих самих налаштуваннях
+  weights: "models/pretrained/yolo11s-pose.pt"
+  imgsz: 960
+  patience: 15
 
 hpo:
-  n_trials: 20
-  sampler: "tpe"          # tpe | random
+  n_trials: 30
+  sampler: "tpe"
   direction: "maximize"
   metric: "metrics/mAP50-95(P)"
-  trial_epochs: 5           # коротке тренування per trial
-  log_trial_weights: true   # зберігати ваги кожного trial у DagsHub
-  log_artifacts: true       # зберігати всі артефакти (графіки, матриці, results.csv)
+  trial_epochs: 20
+  log_trial_weights: false
+  log_artifacts: true
 
   # Search space
   lr0:
-    low: 0.001
-    high: 0.1
+    low: 0.002
+    high: 0.007          # центруємось навколо переможця 0.00467
   lrf:
-    low: 0.001
-    high: 0.1
+    low: 0.005
+    high: 0.03
+
   batch:
-    choices: [4, 8, 16]
+    choices: [4, 8]      # _get_safe_batches() автоматично відфільтрує:
+                         #   imgsz=1920 → залишиться тільки [4]
+                         #   imgsz=1280 → залишаться [4, 8]
+                         #   imgsz=960  → залишаться [4, 8]
+
   optimizer:
-    choices: ["SGD", "Adam", "AdamW"]
+    choices: ["Adam"]    # переможець трьох попередніх запусків
+
+  imgsz:
+    choices: [960, 1280, 1920]  # перевіряємо всі три рівні
+                                # batch для кожного підбирається АВТОМАТИЧНО
+
+  # Аугментації (звужені за результатами лідера: degrees≈0.46, mosaic≈0.54)
   mosaic:
-    low: 0.0
-    high: 1.0
+    low: 0.3
+    high: 0.65
   degrees:
     low: 0.0
-    high: 30.0
-  imgsz:
-    choices: [320, 480, 640, 960]  # T4-safe; 960 max для Colab (15 GB VRAM)
+    high: 8.0            # лідер був 0.46 — великі повороти не допоможуть
+  fliplr:
+    low: 0.3
+    high: 0.5
+  translate:
+    low: 0.05
+    high: 0.15
+  scale:
+    low: 0.2
+    high: 0.45
+
 
 hydra:
   run:

@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: read
   pull-requests: write
@@ -27,8 +30,48 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Lint (ruff)
-        run: uv run ruff check src/ scripts/ tests/
+      - name: Lint (ruff) — src, scripts, tests, dags
+        run: uv run ruff check src/ scripts/ tests/ dags/
+
+  # ── ЛР5: Тестування Prefect Flow (аналог DagBag тесту) ─────────────────
+  dag-tests:
+    name: 🔄 DAG Integrity Tests (Lab 5)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Test DAG/Flow integrity
+        run: uv run pytest tests/test_dag.py -v
+
+  # ── ЛР5: Перевірка Docker build ─────────────────────────────────────────
+  docker-build:
+    name: 🐳 Docker Build Check (Lab 5)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image (multi-stage)
+        run: |
+          docker build \
+            --target runtime \
+            --tag yolo-pose:ci-${{ github.sha }} \
+            .
+
+      - name: Verify image runs
+        run: |
+          docker run --rm yolo-pose:ci-${{ github.sha }} \
+            python -c "from ultralytics import YOLO; print('ultralytics OK')"
 
   pre-train-tests:
     name: 🧪 Pre-train Tests
@@ -68,7 +111,7 @@ jobs:
   train-and-test:
     name: 🚂 CI Train & Quality Gate
     runs-on: ubuntu-latest
-    needs: [lint, pre-train-tests]
+    needs: [lint, dag-tests, pre-train-tests]
 
     steps:
       - uses: actions/checkout@v4
@@ -140,3 +183,4 @@ jobs:
           name: ci-model
           path: runs/ci/ci_train/weights/best.pt
           if-no-files-found: warn
+

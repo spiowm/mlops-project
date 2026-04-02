@@ -92,6 +92,43 @@ def make_sampler(sampler_name: str, seed: int) -> optuna.samplers.BaseSampler:
 
 
 # ---------------------------------------------------------------------------
+# Conditional batch size — залежить від imgsz (захист від OOM)
+# ---------------------------------------------------------------------------
+
+# Максимально безпечний batch для T4 GPU (15 GB VRAM) без gradient checkpointing.
+# Якщо imgsz >= порогу — залишаємо лише батчі, що не перевищують ліміт.
+_BATCH_LIMITS: dict[int, int] = {
+    1280: 8,   # imgsz 1280 → batch не більше ніж 8
+    1920: 4,   # imgsz 1920 → batch не більше ніж 4
+}
+
+
+def _get_safe_batches(imgsz: int, candidates: list[int]) -> list[int]:
+    """
+    Фільтрує список батчів, залишаючи безпечні для заданого imgsz.
+
+    Приклад:
+        _get_safe_batches(1920, [4, 8, 16]) → [4]
+        _get_safe_batches(1280, [4, 8, 16]) → [4, 8]
+        _get_safe_batches(640,  [4, 8, 16]) → [4, 8, 16]  (без обмежень)
+    """
+    max_batch = None
+    for threshold in sorted(_BATCH_LIMITS.keys()):
+        if imgsz >= threshold:
+            max_batch = _BATCH_LIMITS[threshold]
+
+    if max_batch is None:
+        return candidates  # немає обмежень (imgsz < 1280)
+
+    filtered = [b for b in candidates if b <= max_batch]
+    if not filtered:
+        # Якщо всі кандидати занадто великі — беремо найменший
+        return [min(candidates)]
+    return filtered
+
+
+
+# ---------------------------------------------------------------------------
 # Extract metric from YOLO results
 # ---------------------------------------------------------------------------
 
@@ -135,10 +172,6 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
             params["lrf"] = trial.suggest_float(
                 "lrf", hpo.lrf.low, hpo.lrf.high, log=True
             )
-        if "batch" in hpo:
-            params["batch"] = trial.suggest_categorical(
-                "batch", list(hpo.batch.choices)
-            )
         if "optimizer" in hpo:
             params["optimizer"] = trial.suggest_categorical(
                 "optimizer", list(hpo.optimizer.choices)
@@ -151,10 +184,35 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
             params["degrees"] = trial.suggest_float(
                 "degrees", hpo.degrees.low, hpo.degrees.high
             )
+        if "fliplr" in hpo:
+            params["fliplr"] = trial.suggest_float(
+                "fliplr", hpo.fliplr.low, hpo.fliplr.high
+            )
+        if "translate" in hpo:
+            params["translate"] = trial.suggest_float(
+                "translate", hpo.translate.low, hpo.translate.high
+            )
+        if "scale" in hpo:
+            params["scale"] = trial.suggest_float(
+                "scale", hpo.scale.low, hpo.scale.high
+            )
+
+        # --- imgsz та залежний від нього batch ---
+        # Ключова умовна логіка: batch обирається залежно від imgsz,
+        # щоб не отримати Out of Memory на великих роздільних здатностях.
         if "imgsz" in hpo:
             params["imgsz"] = trial.suggest_categorical(
                 "imgsz", list(hpo.imgsz.choices)
             )
+
+        chosen_imgsz = int(params.get("imgsz", cfg.model.imgsz))
+
+        if "batch" in hpo:
+            # Умовний вибір batch: обмежуємо варіанти для великих imgsz
+            safe_batches = _get_safe_batches(chosen_imgsz, list(hpo.batch.choices))
+            params["batch"] = trial.suggest_categorical("batch", safe_batches)
+        else:
+            params["batch"] = _get_safe_batches(chosen_imgsz, [16])[0]
 
         run_name = f"trial_{trial.number:03d}"
         print(f"\n[trial {trial.number:02d}] {params}")
@@ -171,7 +229,7 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
                     data=dataset_yaml,
                     epochs=int(hpo.trial_epochs),
                     imgsz=int(params.get("imgsz", cfg.model.imgsz)),
-                    batch=int(params.get("batch", 16)),
+                    batch=int(params["batch"]),
                     patience=int(cfg.model.patience),
                     optimizer=params.get("optimizer", "auto"),
                     project=str(PROJECT_ROOT / "runs" / "hpo_trials"),
@@ -188,6 +246,12 @@ def objective_factory(cfg: DictConfig, dataset_yaml: str, model_weights: str):
                     train_kwargs["mosaic"] = params["mosaic"]
                 if "degrees" in params:
                     train_kwargs["degrees"] = params["degrees"]
+                if "fliplr" in params:
+                    train_kwargs["fliplr"] = params["fliplr"]
+                if "translate" in params:
+                    train_kwargs["translate"] = params["translate"]
+                if "scale" in params:
+                    train_kwargs["scale"] = params["scale"]
 
                 results = model.train(**train_kwargs)
 
